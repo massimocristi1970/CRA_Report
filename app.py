@@ -202,7 +202,7 @@ def main():
     st.title("📊 TransUnion CRA Report Analyzer")
     st.markdown("""
     Upload your TransUnion CRA report file to analyze and filter the data.
-    Supports large files (up to 200MB) with tab or space-delimited format.
+    Supports large files (up to 500MB) with tab or space-delimited format.
     """)
     
     # File upload
@@ -428,7 +428,7 @@ def main():
         - 📮 **Postcode Search**: Search across postcode fields
         - 🔧 **Advanced Search**: Filter any column with text search
         - 📥 **Export Results**: Download filtered data as CSV
-        - 📊 **Large File Support**: Efficiently handles files up to 200MB
+        - 📊 **Large File Support**: Efficiently handles files up to 500MB
         - 📄 **Pagination**: Browse large datasets with ease
         """)
 

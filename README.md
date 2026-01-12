@@ -1,6 +1,6 @@
 # TransUnion CRA Report Analyzer 📊
 
-A web-based Streamlit application for analyzing TransUnion Credit Reference Agency (CRA) report data. This tool handles large files (200MB+) and provides flexible searching and filtering capabilities across all data columns.
+A web-based Streamlit application for analyzing TransUnion Credit Reference Agency (CRA) report data. This tool handles large files (up to 500MB) and provides flexible searching and filtering capabilities across all data columns.
 
 ## Features ✨
 
@@ -10,7 +10,7 @@ A web-based Streamlit application for analyzing TransUnion Credit Reference Agen
 - **👤 Name & Address Search**: Filter by first name, last name, and postcode
 - **🔧 Advanced Column Search**: Search and filter any column
 - **📥 CSV Export**: Download filtered results instantly
-- **📊 Large File Support**: Efficiently processes files up to 200MB
+- **📊 Large File Support**: Efficiently processes files up to 500MB
 - **📄 Smart Pagination**: Browse large datasets with customizable page sizes
 - **🎯 Auto-Detection**: Intelligent column structure detection
 
