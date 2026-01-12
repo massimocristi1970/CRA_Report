@@ -181,10 +181,10 @@ The `.streamlit/config.toml` file is already configured for optimal performance:
 
 ```python
 # Extract first character as Status Code
-df['Status_Code'] = df['Status_Title'].str[0]
+df['Status_Code'] = df['Status_Title'].astype(str).str[0]
 
 # Extract remaining characters as Title
-df['Title'] = df['Status_Title'].str[1:]
+df['Title'] = df['Status_Title'].astype(str).str[1:]
 ```
 
 ## File Structure 📁

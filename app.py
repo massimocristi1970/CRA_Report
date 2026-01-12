@@ -236,10 +236,6 @@ def main():
         # Extract status codes
         df = extract_status_code(df)
         
-        # Store in session state
-        if 'original_df' not in st.session_state:
-            st.session_state.original_df = df
-        
         # Display total record count
         st.success(f"✅ Successfully loaded {len(df):,} records")
         
