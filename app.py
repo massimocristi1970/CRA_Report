@@ -44,19 +44,19 @@ STATUS_CODES = ['A', 'M', 'P', 'V']
 # Helper Functions
 
 @st.cache_data
-def parse_data_file(uploaded_file) -> Tuple[pd.DataFrame, bool]:
+def parse_data_file(_uploaded_file) -> Tuple[pd.DataFrame, bool]:
     """
     Parse the uploaded data file with intelligent delimiter detection.
     
     Args:
-        uploaded_file: Streamlit UploadedFile object
+        _uploaded_file: Streamlit UploadedFile object (prefixed with _ to avoid hashing)
         
     Returns:
         Tuple of (DataFrame, success_flag)
     """
     try:
         # Read file content
-        content = uploaded_file.read()
+        content = _uploaded_file.read()
         text_content = content.decode('utf-8', errors='ignore')
         
         # Split into lines
