@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=TransUnion CRA Report Analyzer
+Comment=Launch the CRA Report Streamlit app
+Exec=/home/massimocristi/Dev/CRA_Report/launch_cra_app.sh
+Path=/home/massimocristi/Dev/CRA_Report
+Icon=utilities-terminal
+Terminal=true
+Categories=Development;Utility;
