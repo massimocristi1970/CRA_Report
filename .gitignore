@@ -33,7 +33,7 @@ MANIFEST
 venv/
 ENV/
 env/
-.venv
+.venv/
 
 # IDE
 .vscode/
@@ -49,6 +49,4 @@ Thumbs.db
 # Streamlit
 .streamlit/secrets.toml
 
-# Python venv
-.venv/
 

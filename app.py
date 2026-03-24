@@ -5,9 +5,8 @@ A Streamlit application for analyzing Credit Reference Agency report data.
 
 import streamlit as st
 import pandas as pd
-import io
 import re
-from typing import Tuple
+from typing import List, Optional, Tuple
 
 # Page configuration
 st.set_page_config(
@@ -40,11 +39,117 @@ DEFAULT_COLUMN_NAMES = [
 ]
 
 STATUS_CODES = ["A", "M", "P", "V"]
+FIXED_LEADING_COLUMNS = 9
+FIXED_TRAILING_COLUMNS = 5
+VARIABLE_MIDDLE_COLUMNS = 4
 
 
 # -----------------------------
 # Helper Functions
 # -----------------------------
+
+def assign_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    """Apply stable column names, expanding with Column_N names when needed."""
+    if len(df.columns) <= len(DEFAULT_COLUMN_NAMES):
+        df.columns = DEFAULT_COLUMN_NAMES[: len(df.columns)]
+        return df
+
+    column_names = DEFAULT_COLUMN_NAMES.copy()
+    for i in range(len(DEFAULT_COLUMN_NAMES), len(df.columns)):
+        column_names.append(f"Column_{i + 1}")
+    df.columns = column_names
+    return df
+
+
+def split_embedded_date_token(tokens: List[str]) -> List[str]:
+    """Split tokens like `6EB19051979` into postcode/date when the separator is missing."""
+    if len(tokens) < 3:
+        return tokens
+
+    candidate = tokens[-3]
+    if re.fullmatch(r"\d{8}", candidate):
+        return tokens
+
+    match = re.fullmatch(r"(.+?)(\d{8})", candidate)
+    if not match:
+        return tokens
+
+    prefix, date_part = match.groups()
+    if not prefix:
+        return tokens
+
+    updated = tokens.copy()
+    updated[-3] = prefix
+    updated.insert(len(updated) - 2, date_part)
+    return updated
+
+
+def collapse_middle_tokens(tokens: List[str]) -> List[str]:
+    """Collapse variable-width address tokens back into the four expected middle fields."""
+    if len(tokens) <= VARIABLE_MIDDLE_COLUMNS:
+        return tokens + [""] * (VARIABLE_MIDDLE_COLUMNS - len(tokens))
+
+    county = tokens[-1]
+    city = tokens[-2]
+    address_tokens = tokens[:-2]
+
+    if len(address_tokens) == 1:
+        address_1, address_2 = address_tokens[0], ""
+    else:
+        split_at = max(1, len(address_tokens) // 2)
+        address_1 = " ".join(address_tokens[:split_at])
+        address_2 = " ".join(address_tokens[split_at:])
+
+    return [address_1, address_2, city, county]
+
+
+def normalize_row_width(parts: List[str]) -> List[str]:
+    """Normalize one parsed CRA row so core trailing fields stay aligned."""
+    expected_columns = len(DEFAULT_COLUMN_NAMES)
+    clean_parts = [part.strip() for part in parts if part.strip()]
+
+    if len(clean_parts) > FIXED_LEADING_COLUMNS:
+        leading = clean_parts[:FIXED_LEADING_COLUMNS]
+        remainder = split_embedded_date_token(clean_parts[FIXED_LEADING_COLUMNS:])
+        clean_parts = leading + remainder
+
+    if len(clean_parts) > FIXED_LEADING_COLUMNS + FIXED_TRAILING_COLUMNS:
+        leading = clean_parts[:FIXED_LEADING_COLUMNS]
+        remainder = clean_parts[FIXED_LEADING_COLUMNS:]
+        trailing = remainder[-FIXED_TRAILING_COLUMNS:]
+        middle = collapse_middle_tokens(remainder[:-FIXED_TRAILING_COLUMNS])
+        normalized = leading + middle + trailing
+        if len(normalized) <= expected_columns:
+            return normalized + [""] * (expected_columns - len(normalized))
+
+    if len(clean_parts) <= expected_columns:
+        return clean_parts + [""] * (expected_columns - len(clean_parts))
+
+    leading = clean_parts[:FIXED_LEADING_COLUMNS]
+    remainder = clean_parts[FIXED_LEADING_COLUMNS:]
+
+    if len(remainder) <= expected_columns - FIXED_LEADING_COLUMNS:
+        normalized = leading + remainder
+        return normalized + [""] * (expected_columns - len(normalized))
+
+    trailing = remainder[-FIXED_TRAILING_COLUMNS:]
+    middle = collapse_middle_tokens(remainder[:-FIXED_TRAILING_COLUMNS])
+    return leading + middle + trailing
+
+
+def parse_text_content(text_content: str) -> pd.DataFrame:
+    """Parse raw CRA text into a normalized DataFrame."""
+    lines = [line for line in text_content.splitlines() if line.strip()]
+    if not lines:
+        return pd.DataFrame()
+
+    data_rows = []
+    for line in lines:
+        parts = line.replace("\t", " ").split()
+        data_rows.append(normalize_row_width(parts))
+
+    return assign_column_names(pd.DataFrame(data_rows))
+
 
 @st.cache_data
 def parse_data_file(_uploaded_file) -> Tuple[pd.DataFrame, bool]:
@@ -60,36 +165,8 @@ def parse_data_file(_uploaded_file) -> Tuple[pd.DataFrame, bool]:
     try:
         content = _uploaded_file.read()
         text_content = content.decode("utf-8", errors="ignore")
-
-        lines = text_content.strip().split("\n")
-        if not lines:
-            return pd.DataFrame(), False
-
-        data_rows = []
-        max_columns = 0
-
-        for line in lines:
-            line = line.replace("\t", " ").strip()
-            parts = line.split()  # fast: splits on any whitespace, collapses repeats
-            data_rows.append(parts)
-            max_columns = max(max_columns, len(parts))
-
-        for row in data_rows:
-            while len(row) < max_columns:
-                row.append("")
-
-        df = pd.DataFrame(data_rows)
-
-        if len(df.columns) <= len(DEFAULT_COLUMN_NAMES):
-            df.columns = DEFAULT_COLUMN_NAMES[: len(df.columns)]
-        else:
-            column_names = DEFAULT_COLUMN_NAMES.copy()
-            for i in range(len(DEFAULT_COLUMN_NAMES), len(df.columns)):
-                column_names.append(f"Column_{i+1}")
-            df.columns = column_names
-
-        return df, True
-
+        df = parse_text_content(text_content)
+        return df, not df.empty
     except Exception as e:
         st.error(f"Error parsing file: {str(e)}")
         return pd.DataFrame(), False
@@ -198,6 +275,30 @@ def convert_df_to_csv(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8")
 
 
+def load_match_file(uploaded_file) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+    """Load an optional reconciliation file and return either data or an error message."""
+    if uploaded_file is None:
+        return None, None
+
+    try:
+        file_name = uploaded_file.name.lower()
+        if file_name.endswith(".csv"):
+            uploaded_file.seek(0)
+            return pd.read_csv(uploaded_file), None
+        if file_name.endswith(".xlsx"):
+            uploaded_file.seek(0)
+            return pd.read_excel(uploaded_file), None
+        return None, "Unsupported file type. Please upload a CSV or XLSX file."
+    except Exception as exc:
+        return None, f"Unable to read match file: {exc}"
+
+
+def normalize_match_keys(series: pd.Series) -> pd.Series:
+    """Trim values and discard blanks so reconciliation counts are meaningful."""
+    normalized = series.fillna("").astype(str).str.strip()
+    return normalized[normalized != ""]
+
+
 # -----------------------------
 # Main Application
 # -----------------------------
@@ -301,17 +402,10 @@ The application expects a tab or space-delimited text file with the following st
         help="Optional: upload your internal extract to reconcile against CRA file",
     )
 
-    def _load_match_file(uploaded):
-        if uploaded is None:
-            return None
-        name = uploaded.name.lower()
-        if name.endswith(".csv"):
-            return pd.read_csv(uploaded)
-        if name.endswith(".xlsx"):
-            return pd.read_excel(uploaded)
-        return None
+    match_df, match_error = load_match_file(match_file)
 
-    match_df = _load_match_file(match_file)
+    if match_error:
+        st.error(match_error)
 
     if match_df is not None and not match_df.empty:
         c1, c2 = st.columns(2)
@@ -328,8 +422,8 @@ The application expects a tab or space-delimited text file with the following st
                 index=list(match_df.columns).index("Account_ID") if "Account_ID" in match_df.columns else 0,
             )
 
-        cra_keys = df[cra_key].astype(str).str.strip()
-        int_keys = match_df[internal_key].astype(str).str.strip()
+        cra_keys = normalize_match_keys(df[cra_key])
+        int_keys = normalize_match_keys(match_df[internal_key])
 
         cra_set = set(cra_keys)
         int_set = set(int_keys)
@@ -343,8 +437,14 @@ The application expects a tab or space-delimited text file with the following st
         m2.metric("In CRA only", f"{cra_only:,}")
         m3.metric("In internal only", f"{internal_only:,}")
 
-        cra_unmatched_df = df[~cra_keys.isin(int_set)]
-        internal_unmatched_df = match_df[~int_keys.isin(cra_set)]
+        cra_unmatched_df = df[
+            df[cra_key].fillna("").astype(str).str.strip().ne("")
+            & ~df[cra_key].fillna("").astype(str).str.strip().isin(int_set)
+        ]
+        internal_unmatched_df = match_df[
+            match_df[internal_key].fillna("").astype(str).str.strip().ne("")
+            & ~match_df[internal_key].fillna("").astype(str).str.strip().isin(cra_set)
+        ]
 
         if len(cra_unmatched_df) > 0:
             st.caption("CRA records not found in internal extract (preview 200):")

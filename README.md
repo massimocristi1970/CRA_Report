@@ -8,11 +8,13 @@ A web-based Streamlit application for analyzing TransUnion Credit Reference Agen
 - **⚡ Quick Filters**: One-click filtering buttons for each status code
 - **🔎 Account ID Search**: Fast lookup with exact or partial matching
 - **👤 Name & Address Search**: Filter by first name, last name, and postcode
-- **🔧 Advanced Column Search**: Search and filter any column
+- **🔧 Advanced Column Search**: Search and filter any column, with optional regex
 - **📥 CSV Export**: Download filtered results instantly
 - **📊 Large File Support**: Efficiently processes files up to 500MB
 - **📄 Smart Pagination**: Browse large datasets with customizable page sizes
 - **🎯 Auto-Detection**: Intelligent column structure detection
+- **🔁 Cross-File Matching**: Compare CRA keys against an internal CSV/XLSX extract
+- **🧪 Regression Tests**: Core parsing and filtering helpers have lightweight unit coverage
 
 ## Data Format
 
@@ -91,6 +93,7 @@ The application expects tab or space-delimited text files with the following str
 **Advanced Search:**
 - Select any column from the dropdown
 - Enter a search value to filter that column
+- Enable regex mode when you need pattern matching
 
 ### 3. View and Navigate Results
 
@@ -165,10 +168,12 @@ The `.streamlit/config.toml` file is already configured for optimal performance:
 
 ### Performance Optimizations
 
-- **Chunked Processing**: Large files are processed efficiently
+- **Whitespace Parsing**: CRA rows are parsed from tab/space-delimited text
+- **Right-Anchored Tail Parsing**: Postcodes, dates, and trailing numeric fields stay aligned when address text is wider than expected
 - **Caching**: File parsing is cached with `@st.cache_data`
 - **Pagination**: Only displays requested rows at a time
-- **Lazy Loading**: Data is loaded progressively
+- **Split View Preview**: Freeze the first columns while browsing the rest
+- **Cross-File Reconciliation**: Blank keys are ignored so match counts stay accurate
 
 ### Error Handling
 
@@ -180,11 +185,8 @@ The `.streamlit/config.toml` file is already configured for optimal performance:
 ### Status Code Extraction Logic
 
 ```python
-# Extract first character as Status Code
-df['Status_Code'] = df['Status_Title'].astype(str).str[0]
-
-# Extract remaining characters as Title
-df['Title'] = df['Status_Title'].astype(str).str[1:]
+# Only treat tagged values like AMiss or VMr as having a CRA status code.
+# Untagged titles like Mr/Mrs/Miss remain titles and do not become status M.
 ```
 
 ## File Structure 📁
@@ -207,6 +209,12 @@ CRA_Report/
 - openpyxl >= 3.1.0
 
 ## Troubleshooting 🔧
+
+### Running Tests
+
+```bash
+python -m unittest discover -s tests
+```
 
 ### File Upload Issues
 

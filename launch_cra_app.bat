@@ -3,9 +3,20 @@ title TransUnion CRA Report Analyzer
 
 cd /d "%~dp0"
 
-call venv\Scripts\activate.bat
+set "STREAMLIT_EXE="
 
-streamlit run app.py
+if exist ".venv\Scripts\streamlit.exe" (
+    set "STREAMLIT_EXE=.venv\Scripts\streamlit.exe"
+) else if exist "venv\Scripts\streamlit.exe" (
+    set "STREAMLIT_EXE=venv\Scripts\streamlit.exe"
+)
+
+if "%STREAMLIT_EXE%"=="" (
+    echo Could not find Streamlit in .venv or venv.
+    echo Install dependencies first with: pip install -r requirements.txt
+    pause
+    exit /b 1
+)
 
 start "" http://localhost:8501
-streamlit run app.py
+"%STREAMLIT_EXE%" run app.py
