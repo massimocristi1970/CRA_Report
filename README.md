@@ -66,6 +66,16 @@ wrangler deploy
 
 You will need to authenticate Wrangler with your Cloudflare account before deploying.
 
+### GitHub auto-deploy
+
+This repository includes a GitHub Actions workflow at `.github/workflows/deploy-cloudflare-worker.yml`.
+
+To enable automatic deployment on pushes to `main`, add this repository secret in GitHub:
+
+- `CLOUDFLARE_API_TOKEN`
+
+The workflow already includes the Cloudflare account ID for this Worker, then installs dependencies, runs `npm run check:web`, and deploys with `wrangler deploy`.
+
 ## Streamlit Cloud
 
 If you still want the hosted Streamlit version, you can deploy `app.py` to Streamlit Cloud exactly as before.
