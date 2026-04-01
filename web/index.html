@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRA Report Analyzer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="main">
+    <div class="page-frame">
+      <header class="hero-card">
+        <div class="section-header">
+          <h1>TransUnion CRA Report Analyzer</h1>
+          <div class="inline-actions">
+            <input id="cra-file" type="file" accept=".txt" hidden>
+            <input id="match-file" type="file" accept=".csv,.xlsx" hidden>
+            <label class="btn" for="cra-file">Choose CRA file</label>
+            <button class="btn btn-secondary" id="load-sample" type="button">Load sample data</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="card upload-card">
+        <div class="upload-meta">
+          <h2>Data Input</h2>
+          <p>Upload your CRA report and optional match file, then filter and export the results below.</p>
+        </div>
+        <div class="upload-controls">
+          <label class="btn btn-secondary" for="match-file">Add match file</label>
+          <button class="btn btn-ghost" id="reset-app" type="button">Reset</button>
+        </div>
+        <div class="upload-status" id="upload-status">No CRA report loaded yet.</div>
+      </section>
+
+      <section class="stats-strip">
+        <article class="card summary-card"><span class="summary-label">Total records</span><strong class="summary-value summary-value--primary" id="metric-total">0</strong></article>
+        <article class="card summary-card"><span class="summary-label">Filtered records</span><strong class="summary-value summary-value--primary" id="metric-filtered">0</strong></article>
+        <article class="card summary-card"><span class="summary-label">Showing</span><strong class="summary-value summary-value--success" id="metric-percent">0.0%</strong></article>
+        <article class="card summary-card"><span class="summary-label">Matched keys</span><strong class="summary-value summary-value--warning" id="metric-matched">0</strong></article>
+      </section>
+
+      <section class="workspace">
+        <aside class="card sidebar">
+          <div class="sidebar-section">
+            <h3>Status Code</h3>
+            <div class="status-grid" id="status-buttons"></div>
+          </div>
+          <div class="sidebar-section">
+            <label for="account-id">Account ID</label>
+            <input id="account-id" type="text" placeholder="Search Account ID">
+            <label class="checkbox"><input id="exact-match" type="checkbox"><span>Exact match</span></label>
+          </div>
+          <div class="sidebar-section">
+            <label for="first-name">First name</label>
+            <input id="first-name" type="text" placeholder="Sarah">
+            <label for="last-name">Last name</label>
+            <input id="last-name" type="text" placeholder="Lawrence">
+          </div>
+          <div class="sidebar-section">
+            <label for="postcode">Postcode</label>
+            <input id="postcode" type="text" placeholder="SS2">
+          </div>
+          <div class="sidebar-section">
+            <label for="search-column">Advanced column search</label>
+            <select id="search-column"></select>
+            <input id="search-value" type="text" placeholder="Search value">
+            <label class="checkbox"><input id="regex-mode" type="checkbox"><span>Regex mode</span></label>
+          </div>
+          <div class="sidebar-section">
+            <h3>Cross-File Match</h3>
+            <label for="cra-match-column">CRA key column</label>
+            <select id="cra-match-column"></select>
+            <label for="match-column">Match file column</label>
+            <select id="match-column"></select>
+            <div class="surface-panel match-summary" id="match-summary">Upload a CSV or XLSX file to compare key sets.</div>
+          </div>
+          <div class="sidebar-section">
+            <button class="btn full-width" id="download-filtered" type="button">Download filtered CSV</button>
+          </div>
+        </aside>
+
+        <section class="results stack">
+          <div class="card table-card">
+            <div class="section-header">
+              <div>
+                <h2>Status Code Distribution</h2>
+                <p>Counts are based on the loaded CRA report before filters are applied.</p>
+              </div>
+            </div>
+            <div class="chart" id="status-chart"></div>
+          </div>
+
+          <div class="card table-card">
+            <div class="table-toolbar">
+              <div class="form-group toolbar-group">
+                <label for="rows-per-page">Rows per page</label>
+                <select id="rows-per-page">
+                  <option value="50">50</option>
+                  <option value="100" selected>100</option>
+                  <option value="250">250</option>
+                  <option value="500">500</option>
+                  <option value="1000">1000</option>
+                </select>
+              </div>
+              <div class="form-group toolbar-group">
+                <label for="page-number">Page</label>
+                <input id="page-number" type="number" min="1" value="1">
+              </div>
+              <div class="table-controls grow">
+                <span id="table-caption">No records to display.</span>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table id="results-table">
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card row-card">
+            <div class="section-header">
+              <div>
+                <h2>Single Row Export</h2>
+                <p>Pick a visible row from the current page and export it separately.</p>
+              </div>
+            </div>
+            <div class="row-tools">
+              <div class="form-group toolbar-group">
+                <label for="selected-row">Visible row number</label>
+                <input id="selected-row" type="number" min="1" value="1">
+              </div>
+              <button class="btn btn-secondary" id="download-row" type="button">Download selected row</button>
+            </div>
+            <pre id="row-preview">Load a CRA report to preview a single row.</pre>
+          </div>
+        </section>
+      </section>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="./app.js" defer></script>
+</body>
+</html>

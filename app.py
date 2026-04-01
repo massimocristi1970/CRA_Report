@@ -263,9 +263,11 @@ def filter_dataframe(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
                         val, case=False, na=False, regex=regex_mode
                     )
                 ]
-            except re.error:
-                # Invalid regex: return empty result set rather than crashing
-                return filtered_df.iloc[0:0]
+            except Exception as exc:
+                # pandas may surface invalid regex patterns via re.error or backend-specific errors.
+                if regex_mode:
+                    return filtered_df.iloc[0:0]
+                raise exc
 
     return filtered_df
 
