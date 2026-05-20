@@ -1,44 +1,533 @@
-const DEFAULT_COLUMN_NAMES = ["Account_ID", "Column_2", "Column_3", "Column_4", "Column_5", "Column_6", "Status_Title", "First_Name", "Last_Name", "Address_Line_1", "Address_Line_2", "City", "County", "Postcode_1", "Postcode_2", "Date_Field", "Column_17", "Column_18"];
+const DEFAULT_COLUMN_NAMES = [
+  "Account_ID",
+  "Column_2",
+  "Column_3",
+  "Column_4",
+  "Column_5",
+  "Column_6",
+  "Status_Title",
+  "First_Name",
+  "Last_Name",
+  "Address_Line_1",
+  "Address_Line_2",
+  "City",
+  "County",
+  "Postcode_1",
+  "Postcode_2",
+  "Date_Field",
+  "Column_17",
+  "Column_18",
+];
 const STATUS_CODES = ["A", "M", "P", "V"];
 const FIXED_LEADING_COLUMNS = 9;
 const FIXED_TRAILING_COLUMNS = 5;
 const VARIABLE_MIDDLE_COLUMNS = 4;
-const state = { rawRows: [], filteredRows: [], columns: [], matchRows: [], matchColumns: [], selectedStatusCodes: new Set(), rowsPerPage: 100, page: 1 };
+
+const state = {
+  rawRows: [],
+  filteredRows: [],
+  columns: [],
+  matchRows: [],
+  matchColumns: [],
+  selectedStatusCodes: new Set(),
+  rowsPerPage: 100,
+  page: 1,
+};
+
 const sampleText = `864652  2.24062E+32  0  0  0  0  AMiss  Sarah  Lawrence  70  VICTORIA  AVENUE  SOUTHEND-ON-SEA  SS2  6EB  19051979  0  0000000M
 590885  2.27072E+32  0  0  0  0  MMiss  Charlotte  Giles  Grecian  Street  Maidstone  Kent  ME14  2TS000000024051996  0  0000000M`;
-function assignColumnNames(row) { return row.map((_, index) => DEFAULT_COLUMN_NAMES[index] || `Column_${index + 1}`); }
-function splitEmbeddedDateToken(tokens) { if (tokens.length < 3) return tokens; const candidate = tokens[tokens.length - 3]; if (/^\d{8}$/.test(candidate)) return tokens; const match = candidate.match(/^(.+?)(\d{8})$/); if (!match || !match[1]) return tokens; const updated = [...tokens]; updated[updated.length - 3] = match[1]; updated.splice(updated.length - 2, 0, match[2]); return updated; }
-function collapseMiddleTokens(tokens) { if (tokens.length <= VARIABLE_MIDDLE_COLUMNS) return [...tokens, ...Array(VARIABLE_MIDDLE_COLUMNS - tokens.length).fill("")]; const county = tokens[tokens.length - 1]; const city = tokens[tokens.length - 2]; const addressTokens = tokens.slice(0, -2); if (addressTokens.length === 1) return [addressTokens[0], "", city, county]; const splitAt = Math.max(1, Math.floor(addressTokens.length / 2)); return [addressTokens.slice(0, splitAt).join(" "), addressTokens.slice(splitAt).join(" "), city, county]; }
-function normalizeRowWidth(parts) { const expectedColumns = DEFAULT_COLUMN_NAMES.length; let cleanParts = parts.map((part) => part.trim()).filter(Boolean); if (cleanParts.length > FIXED_LEADING_COLUMNS) { const leading = cleanParts.slice(0, FIXED_LEADING_COLUMNS); const remainder = splitEmbeddedDateToken(cleanParts.slice(FIXED_LEADING_COLUMNS)); cleanParts = [...leading, ...remainder]; } if (cleanParts.length > FIXED_LEADING_COLUMNS + FIXED_TRAILING_COLUMNS) { const leading = cleanParts.slice(0, FIXED_LEADING_COLUMNS); const remainder = cleanParts.slice(FIXED_LEADING_COLUMNS); const trailing = remainder.slice(-FIXED_TRAILING_COLUMNS); const middle = collapseMiddleTokens(remainder.slice(0, -FIXED_TRAILING_COLUMNS)); const normalized = [...leading, ...middle, ...trailing]; if (normalized.length <= expectedColumns) return [...normalized, ...Array(expectedColumns - normalized.length).fill("")]; } if (cleanParts.length <= expectedColumns) return [...cleanParts, ...Array(expectedColumns - cleanParts.length).fill("")]; const leading = cleanParts.slice(0, FIXED_LEADING_COLUMNS); const remainder = cleanParts.slice(FIXED_LEADING_COLUMNS); if (remainder.length <= expectedColumns - FIXED_LEADING_COLUMNS) { const normalized = [...leading, ...remainder]; return [...normalized, ...Array(expectedColumns - normalized.length).fill("")]; } const trailing = remainder.slice(-FIXED_TRAILING_COLUMNS); const middle = collapseMiddleTokens(remainder.slice(0, -FIXED_TRAILING_COLUMNS)); return [...leading, ...middle, ...trailing]; }
-function extractStatusCode(row) { const statusTitle = String(row.Status_Title || "").trim(); const tagged = statusTitle.length >= 2 && STATUS_CODES.includes(statusTitle[0]) && /[A-Z]/.test(statusTitle[1]); return { ...row, Status_Code: tagged ? statusTitle[0] : "", Title: tagged ? statusTitle.slice(1) : statusTitle }; }
-function parseTextContent(textContent) { const lines = textContent.split(/\r?\n/).filter((line) => line.trim()); if (!lines.length) return []; return lines.map((line) => { const normalized = normalizeRowWidth(line.replace(/\t/g, " ").split(/\s+/)); const columns = assignColumnNames(normalized); const row = Object.fromEntries(columns.map((column, index) => [column, normalized[index] ?? ""])); return extractStatusCode(row); }); }
-function normalizeMatchKeys(values) { return values.map((value) => String(value ?? "").trim()).filter(Boolean); }
-function renderMessage(message, isError = false) { const status = document.getElementById("upload-status"); if (message) status.textContent = message; status.classList.toggle("error", isError); }
-function rowMatchesFilters(row) { const accountId = document.getElementById("account-id").value.trim(); const exactMatch = document.getElementById("exact-match").checked; const firstName = document.getElementById("first-name").value.trim(); const lastName = document.getElementById("last-name").value.trim(); const postcode = document.getElementById("postcode").value.trim(); const searchColumn = document.getElementById("search-column").value; const searchValue = document.getElementById("search-value").value; const regexMode = document.getElementById("regex-mode").checked; if (accountId) { const target = String(row.Account_ID ?? ""); if (exactMatch ? target !== accountId : !target.toLowerCase().includes(accountId.toLowerCase())) return false; } if (state.selectedStatusCodes.size && !state.selectedStatusCodes.has(row.Status_Code)) return false; if (firstName && !String(row.First_Name ?? "").toLowerCase().includes(firstName.toLowerCase())) return false; if (lastName && !String(row.Last_Name ?? "").toLowerCase().includes(lastName.toLowerCase())) return false; if (postcode) { const postcode1 = String(row.Postcode_1 ?? "").toLowerCase(); const postcode2 = String(row.Postcode_2 ?? "").toLowerCase(); const needle = postcode.toLowerCase(); if (!postcode1.includes(needle) && !postcode2.includes(needle)) return false; } if (searchColumn && searchValue) { const target = String(row[searchColumn] ?? ""); if (regexMode) { try { if (!(new RegExp(searchValue, "i")).test(target)) return false; } catch (error) { renderMessage(`Invalid regex: ${error.message}`, true); return false; } } else if (!target.toLowerCase().includes(searchValue.toLowerCase())) { return false; } } return true; }
-function updateMetrics() { const total = state.rawRows.length; const filtered = state.filteredRows.length; const percent = total ? ((filtered / total) * 100).toFixed(1) : "0.0"; document.getElementById("metric-total").textContent = total.toLocaleString(); document.getElementById("metric-filtered").textContent = filtered.toLocaleString(); document.getElementById("metric-percent").textContent = `${percent}%`; }
-function renderChart() { const chart = document.getElementById("status-chart"); chart.innerHTML = ""; const counts = Object.fromEntries(STATUS_CODES.map((code) => [code, 0])); state.rawRows.forEach((row) => { if (counts[row.Status_Code] !== undefined) counts[row.Status_Code] += 1; }); const maxCount = Math.max(1, ...Object.values(counts)); STATUS_CODES.forEach((code) => { const row = document.createElement("div"); row.className = "chart-row"; row.innerHTML = `<strong>${code}</strong><div class="chart-bar-track"><div class="chart-bar-fill" style="width:${(counts[code] / maxCount) * 100}%"></div></div><span>${counts[code].toLocaleString()}</span>`; chart.appendChild(row); }); }
-function renderTable() { const table = document.getElementById("results-table"); const thead = table.querySelector("thead"); const tbody = table.querySelector("tbody"); thead.innerHTML = ""; tbody.innerHTML = ""; if (!state.columns.length) { document.getElementById("table-caption").textContent = "No records to display."; return; } const columns = ["Status_Code", "Title", ...state.columns.filter((column) => !["Status_Code", "Title"].includes(column))]; const headerRow = document.createElement("tr"); columns.forEach((column) => { const th = document.createElement("th"); th.textContent = column; headerRow.appendChild(th); }); thead.appendChild(headerRow); const start = (state.page - 1) * state.rowsPerPage; const end = Math.min(start + state.rowsPerPage, state.filteredRows.length); const pageRows = state.filteredRows.slice(start, end); pageRows.forEach((row) => { const tr = document.createElement("tr"); columns.forEach((column) => { const td = document.createElement("td"); td.textContent = row[column] ?? ""; tr.appendChild(td); }); tbody.appendChild(tr); }); document.getElementById("page-number").max = Math.max(1, Math.ceil(state.filteredRows.length / state.rowsPerPage)); document.getElementById("page-number").value = String(state.page); document.getElementById("selected-row").max = Math.max(1, pageRows.length); document.getElementById("table-caption").textContent = pageRows.length ? `Showing rows ${start + 1} to ${end} of ${state.filteredRows.length.toLocaleString()}.` : "No records match the current filters."; }
-function getSelectedVisibleRow() { const visibleIndex = Number(document.getElementById("selected-row").value || "1") - 1; const start = (state.page - 1) * state.rowsPerPage; const pageRows = state.filteredRows.slice(start, start + state.rowsPerPage); return pageRows[visibleIndex] || null; }
-function renderRowPreview() { const preview = document.getElementById("row-preview"); const selectedRow = getSelectedVisibleRow(); preview.textContent = selectedRow ? JSON.stringify(selectedRow, null, 2) : "No visible row selected."; }
-function populateColumnSelects() { const baseOptions = [`<option value="">Select column</option>`]; const options = state.columns.map((column) => `<option value="${column}">${column}</option>`); document.getElementById("search-column").innerHTML = [...baseOptions, ...options].join(""); document.getElementById("cra-match-column").innerHTML = options.join(""); }
-function populateMatchColumnSelect() { document.getElementById("match-column").innerHTML = state.matchColumns.map((column) => `<option value="${column}">${column}</option>`).join(""); }
-function updateMatchMetrics() { const craColumn = document.getElementById("cra-match-column").value; const matchColumn = document.getElementById("match-column").value; if (!state.matchRows.length || !craColumn || !matchColumn) { document.getElementById("metric-matched").textContent = "0"; document.getElementById("match-summary").textContent = "Upload a CSV or XLSX file to compare key sets."; return; } const craKeys = new Set(normalizeMatchKeys(state.rawRows.map((row) => row[craColumn]))); const matchKeys = new Set(normalizeMatchKeys(state.matchRows.map((row) => row[matchColumn]))); let matched = 0; craKeys.forEach((key) => { if (matchKeys.has(key)) matched += 1; }); document.getElementById("metric-matched").textContent = matched.toLocaleString(); document.getElementById("match-summary").textContent = `${matched.toLocaleString()} shared unique keys, ${(craKeys.size - matched).toLocaleString()} only in CRA, ${(matchKeys.size - matched).toLocaleString()} only in match file.`; }
-function applyFilters() { renderMessage(""); state.filteredRows = state.rawRows.filter(rowMatchesFilters); const totalPages = Math.max(1, Math.ceil(state.filteredRows.length / state.rowsPerPage)); state.page = Math.min(Math.max(1, state.page), totalPages); updateMetrics(); renderTable(); renderRowPreview(); }
-function csvEscape(value) { const text = String(value); return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; }
-function downloadCsv(filename, rows) { if (!rows.length) return; const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row)))); const csvLines = [columns.join(","), ...rows.map((row) => columns.map((column) => csvEscape(row[column] ?? "")).join(","))]; const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url); }
-function handleCraUpload(textContent, label) { const rows = parseTextContent(textContent); if (!rows.length) { renderMessage("The CRA file could not be parsed.", true); return; } state.rawRows = rows; state.filteredRows = [...rows]; state.columns = ["Status_Title", "Status_Code", "Title", ...Object.keys(rows[0]).filter((column) => !["Status_Title", "Status_Code", "Title"].includes(column))]; state.page = 1; populateColumnSelects(); renderChart(); applyFilters(); updateMatchMetrics(); renderMessage(`${label} loaded successfully with ${rows.length.toLocaleString()} records.`); }
-async function parseMatchFile(file) { const extension = file.name.toLowerCase(); if (extension.endsWith(".csv")) { const text = await file.text(); const [headerLine, ...lines] = text.split(/\r?\n/).filter(Boolean); const headers = headerLine.split(",").map((value) => value.trim()); return lines.map((line) => { const values = line.split(","); return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])); }); } if (extension.endsWith(".xlsx")) { const data = await file.arrayBuffer(); const workbook = XLSX.read(data, { type: "array" }); const sheet = workbook.Sheets[workbook.SheetNames[0]]; return XLSX.utils.sheet_to_json(sheet, { defval: "" }); } throw new Error("Unsupported match file type."); }
+
+function assignColumnNames(row) {
+  return row.map((_, index) => DEFAULT_COLUMN_NAMES[index] || `Column_${index + 1}`);
+}
+
+function splitEmbeddedDateToken(tokens) {
+  if (tokens.length < 3) return tokens;
+
+  const candidate = tokens[tokens.length - 3];
+  if (/^\d{8}$/.test(candidate)) return tokens;
+
+  const match = candidate.match(/^(.+?)(\d{8})$/);
+  if (!match || !match[1]) return tokens;
+
+  const updated = [...tokens];
+  updated[updated.length - 3] = match[1];
+  updated.splice(updated.length - 2, 0, match[2]);
+  return updated;
+}
+
+function collapseMiddleTokens(tokens) {
+  if (tokens.length <= VARIABLE_MIDDLE_COLUMNS) {
+    return [...tokens, ...Array(VARIABLE_MIDDLE_COLUMNS - tokens.length).fill("")];
+  }
+
+  const county = tokens[tokens.length - 1];
+  const city = tokens[tokens.length - 2];
+  const addressTokens = tokens.slice(0, -2);
+
+  if (addressTokens.length === 1) return [addressTokens[0], "", city, county];
+
+  const splitAt = Math.max(1, Math.floor(addressTokens.length / 2));
+  return [
+    addressTokens.slice(0, splitAt).join(" "),
+    addressTokens.slice(splitAt).join(" "),
+    city,
+    county,
+  ];
+}
+
+function normalizeRowWidth(parts) {
+  const expectedColumns = DEFAULT_COLUMN_NAMES.length;
+  let cleanParts = parts.map((part) => part.trim()).filter(Boolean);
+
+  if (cleanParts.length > FIXED_LEADING_COLUMNS) {
+    const leading = cleanParts.slice(0, FIXED_LEADING_COLUMNS);
+    const remainder = splitEmbeddedDateToken(cleanParts.slice(FIXED_LEADING_COLUMNS));
+    cleanParts = [...leading, ...remainder];
+  }
+
+  if (cleanParts.length > FIXED_LEADING_COLUMNS + FIXED_TRAILING_COLUMNS) {
+    const leading = cleanParts.slice(0, FIXED_LEADING_COLUMNS);
+    const remainder = cleanParts.slice(FIXED_LEADING_COLUMNS);
+    const trailing = remainder.slice(-FIXED_TRAILING_COLUMNS);
+    const middle = collapseMiddleTokens(remainder.slice(0, -FIXED_TRAILING_COLUMNS));
+    const normalized = [...leading, ...middle, ...trailing];
+    if (normalized.length <= expectedColumns) {
+      return [...normalized, ...Array(expectedColumns - normalized.length).fill("")];
+    }
+  }
+
+  if (cleanParts.length <= expectedColumns) {
+    return [...cleanParts, ...Array(expectedColumns - cleanParts.length).fill("")];
+  }
+
+  const leading = cleanParts.slice(0, FIXED_LEADING_COLUMNS);
+  const remainder = cleanParts.slice(FIXED_LEADING_COLUMNS);
+
+  if (remainder.length <= expectedColumns - FIXED_LEADING_COLUMNS) {
+    const normalized = [...leading, ...remainder];
+    return [...normalized, ...Array(expectedColumns - normalized.length).fill("")];
+  }
+
+  const trailing = remainder.slice(-FIXED_TRAILING_COLUMNS);
+  const middle = collapseMiddleTokens(remainder.slice(0, -FIXED_TRAILING_COLUMNS));
+  return [...leading, ...middle, ...trailing];
+}
+
+function extractStatusCode(row) {
+  const statusTitle = String(row.Status_Title || "").trim();
+  const tagged =
+    statusTitle.length >= 2 &&
+    STATUS_CODES.includes(statusTitle[0]) &&
+    /[A-Z]/.test(statusTitle[1]);
+
+  return {
+    ...row,
+    Status_Code: tagged ? statusTitle[0] : "",
+    Title: tagged ? statusTitle.slice(1) : statusTitle,
+  };
+}
+
+function parseTextContent(textContent) {
+  const lines = textContent.split(/\r?\n/).filter((line) => line.trim());
+  if (!lines.length) return [];
+
+  return lines.map((line) => {
+    const normalized = normalizeRowWidth(line.replace(/\t/g, " ").split(/\s+/));
+    const columns = assignColumnNames(normalized);
+    const row = Object.fromEntries(columns.map((column, index) => [column, normalized[index] ?? ""]));
+    return extractStatusCode(row);
+  });
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      field += '"';
+      index += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      row.push(field);
+      field = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(field);
+      if (row.some((value) => value.trim() !== "")) rows.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += char;
+    }
+  }
+
+  row.push(field);
+  if (row.some((value) => value.trim() !== "")) rows.push(row);
+  return rows;
+}
+
+function normalizeMatchKeys(values) {
+  return values.map((value) => String(value ?? "").trim()).filter(Boolean);
+}
+
+function renderMessage(message = "", isError = false) {
+  const status = document.getElementById("upload-status");
+  status.textContent =
+    message || (state.rawRows.length ? `${state.rawRows.length.toLocaleString()} CRA records loaded.` : "No CRA report loaded yet.");
+  status.classList.toggle("error", isError);
+}
+
+function rowMatchesFilters(row) {
+  const accountId = document.getElementById("account-id").value.trim();
+  const exactMatch = document.getElementById("exact-match").checked;
+  const firstName = document.getElementById("first-name").value.trim();
+  const lastName = document.getElementById("last-name").value.trim();
+  const postcode = document.getElementById("postcode").value.trim();
+  const searchColumn = document.getElementById("search-column").value;
+  const searchValue = document.getElementById("search-value").value;
+  const regexMode = document.getElementById("regex-mode").checked;
+
+  if (accountId) {
+    const target = String(row.Account_ID ?? "");
+    if (exactMatch ? target !== accountId : !target.toLowerCase().includes(accountId.toLowerCase())) return false;
+  }
+
+  if (state.selectedStatusCodes.size && !state.selectedStatusCodes.has(row.Status_Code)) return false;
+  if (firstName && !String(row.First_Name ?? "").toLowerCase().includes(firstName.toLowerCase())) return false;
+  if (lastName && !String(row.Last_Name ?? "").toLowerCase().includes(lastName.toLowerCase())) return false;
+
+  if (postcode) {
+    const postcode1 = String(row.Postcode_1 ?? "").toLowerCase();
+    const postcode2 = String(row.Postcode_2 ?? "").toLowerCase();
+    const needle = postcode.toLowerCase();
+    if (!postcode1.includes(needle) && !postcode2.includes(needle)) return false;
+  }
+
+  if (searchColumn && searchValue) {
+    const target = String(row[searchColumn] ?? "");
+    if (regexMode) {
+      try {
+        if (!new RegExp(searchValue, "i").test(target)) return false;
+      } catch (error) {
+        renderMessage(`Invalid regex: ${error.message}`, true);
+        return false;
+      }
+    } else if (!target.toLowerCase().includes(searchValue.toLowerCase())) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function updateMetrics() {
+  const total = state.rawRows.length;
+  const filtered = state.filteredRows.length;
+  const percent = total ? ((filtered / total) * 100).toFixed(1) : "0.0";
+
+  document.getElementById("metric-total").textContent = total.toLocaleString();
+  document.getElementById("metric-filtered").textContent = filtered.toLocaleString();
+  document.getElementById("metric-percent").textContent = `${percent}%`;
+}
+
+function renderChart() {
+  const chart = document.getElementById("status-chart");
+  chart.replaceChildren();
+
+  const counts = Object.fromEntries(STATUS_CODES.map((code) => [code, 0]));
+  state.rawRows.forEach((row) => {
+    if (counts[row.Status_Code] !== undefined) counts[row.Status_Code] += 1;
+  });
+
+  const maxCount = Math.max(1, ...Object.values(counts));
+  STATUS_CODES.forEach((code) => {
+    const row = document.createElement("div");
+    const label = document.createElement("strong");
+    const track = document.createElement("div");
+    const fill = document.createElement("div");
+    const value = document.createElement("span");
+
+    row.className = "chart-row";
+    track.className = "chart-bar-track";
+    fill.className = "chart-bar-fill";
+    fill.style.width = `${(counts[code] / maxCount) * 100}%`;
+    label.textContent = code;
+    value.textContent = counts[code].toLocaleString();
+
+    track.appendChild(fill);
+    row.append(label, track, value);
+    chart.appendChild(row);
+  });
+}
+
+function renderTable() {
+  const table = document.getElementById("results-table");
+  const thead = table.querySelector("thead");
+  const tbody = table.querySelector("tbody");
+  thead.replaceChildren();
+  tbody.replaceChildren();
+
+  if (!state.columns.length) {
+    document.getElementById("table-caption").textContent = "No records to display.";
+    return;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(state.filteredRows.length / state.rowsPerPage));
+  state.page = Math.min(Math.max(1, state.page), totalPages);
+
+  const columns = ["Status_Code", "Title", ...state.columns.filter((column) => !["Status_Code", "Title"].includes(column))];
+  const headerRow = document.createElement("tr");
+  columns.forEach((column) => {
+    const th = document.createElement("th");
+    th.textContent = column;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+
+  const start = (state.page - 1) * state.rowsPerPage;
+  const end = Math.min(start + state.rowsPerPage, state.filteredRows.length);
+  const pageRows = state.filteredRows.slice(start, end);
+
+  pageRows.forEach((row) => {
+    const tr = document.createElement("tr");
+    columns.forEach((column) => {
+      const td = document.createElement("td");
+      td.textContent = row[column] ?? "";
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById("page-number").max = totalPages;
+  document.getElementById("page-number").value = String(state.page);
+  document.getElementById("selected-row").max = Math.max(1, pageRows.length);
+  document.getElementById("table-caption").textContent = pageRows.length
+    ? `Showing rows ${start + 1} to ${end} of ${state.filteredRows.length.toLocaleString()}.`
+    : "No records match the current filters.";
+}
+
+function getSelectedVisibleRow() {
+  const visibleIndex = Number(document.getElementById("selected-row").value || "1") - 1;
+  const start = (state.page - 1) * state.rowsPerPage;
+  const pageRows = state.filteredRows.slice(start, start + state.rowsPerPage);
+  return pageRows[visibleIndex] || null;
+}
+
+function renderRowPreview() {
+  const preview = document.getElementById("row-preview");
+  const selectedRow = getSelectedVisibleRow();
+  preview.textContent = selectedRow ? JSON.stringify(selectedRow, null, 2) : "No visible row selected.";
+}
+
+function setSelectOptions(select, columns, includeBlank = false) {
+  select.replaceChildren();
+  if (includeBlank) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Select column";
+    select.appendChild(option);
+  }
+
+  columns.forEach((column) => {
+    const option = document.createElement("option");
+    option.value = column;
+    option.textContent = column;
+    select.appendChild(option);
+  });
+}
+
+function populateColumnSelects() {
+  setSelectOptions(document.getElementById("search-column"), state.columns, true);
+  setSelectOptions(document.getElementById("cra-match-column"), state.columns);
+
+  if (state.columns.includes("Account_ID")) {
+    document.getElementById("cra-match-column").value = "Account_ID";
+  }
+}
+
+function populateMatchColumnSelect() {
+  setSelectOptions(document.getElementById("match-column"), state.matchColumns);
+  if (state.matchColumns.includes("Account_ID")) {
+    document.getElementById("match-column").value = "Account_ID";
+  }
+}
+
+function updateMatchMetrics() {
+  const craColumn = document.getElementById("cra-match-column").value;
+  const matchColumn = document.getElementById("match-column").value;
+
+  if (!state.matchRows.length || !craColumn || !matchColumn) {
+    document.getElementById("metric-matched").textContent = "0";
+    document.getElementById("match-summary").textContent = "Upload a CSV or XLSX file to compare key sets.";
+    return;
+  }
+
+  const craKeys = new Set(normalizeMatchKeys(state.rawRows.map((row) => row[craColumn])));
+  const matchKeys = new Set(normalizeMatchKeys(state.matchRows.map((row) => row[matchColumn])));
+  let matched = 0;
+  craKeys.forEach((key) => {
+    if (matchKeys.has(key)) matched += 1;
+  });
+
+  document.getElementById("metric-matched").textContent = matched.toLocaleString();
+  document.getElementById("match-summary").textContent =
+    `${matched.toLocaleString()} shared unique keys, ${(craKeys.size - matched).toLocaleString()} only in CRA, ${(matchKeys.size - matched).toLocaleString()} only in match file.`;
+}
+
+function applyFilters() {
+  renderMessage();
+  state.filteredRows = state.rawRows.filter(rowMatchesFilters);
+  renderTable();
+  updateMetrics();
+  renderRowPreview();
+}
+
+function csvEscape(value) {
+  const text = String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadCsv(filename, rows) {
+  if (!rows.length) return;
+
+  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  const csvLines = [
+    columns.map(csvEscape).join(","),
+    ...rows.map((row) => columns.map((column) => csvEscape(row[column] ?? "")).join(",")),
+  ];
+  const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function handleCraUpload(textContent, label) {
+  const rows = parseTextContent(textContent);
+  if (!rows.length) {
+    renderMessage("The CRA file could not be parsed.", true);
+    return;
+  }
+
+  state.rawRows = rows;
+  state.filteredRows = [...rows];
+  state.columns = ["Status_Title", "Status_Code", "Title", ...Object.keys(rows[0]).filter((column) => !["Status_Title", "Status_Code", "Title"].includes(column))];
+  state.page = 1;
+  populateColumnSelects();
+  renderChart();
+  applyFilters();
+  updateMatchMetrics();
+  renderMessage(`${label} loaded successfully with ${rows.length.toLocaleString()} records.`);
+}
+
+async function parseMatchFile(file) {
+  const extension = file.name.toLowerCase();
+
+  if (extension.endsWith(".csv")) {
+    const csvRows = parseCsv(await file.text());
+    const [headers, ...rows] = csvRows;
+    if (!headers || !headers.length) return [];
+    return rows.map((row) => Object.fromEntries(headers.map((header, index) => [header.trim(), row[index] ?? ""])));
+  }
+
+  if (extension.endsWith(".xlsx")) {
+    if (typeof XLSX === "undefined") throw new Error("XLSX support is unavailable. Check the spreadsheet library loaded correctly.");
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(sheet, { defval: "" });
+  }
+
+  throw new Error("Unsupported match file type.");
+}
+
 function bindEvents() {
-  document.getElementById("cra-file").addEventListener("change", async (event) => { const file = event.target.files[0]; if (!file) return; handleCraUpload(await file.text(), file.name); });
-  document.getElementById("match-file").addEventListener("change", async (event) => { const file = event.target.files[0]; if (!file) return; try { const rows = await parseMatchFile(file); state.matchRows = rows; state.matchColumns = rows.length ? Object.keys(rows[0]) : []; populateMatchColumnSelect(); updateMatchMetrics(); renderMessage(`${file.name} added for cross-file matching.`); } catch (error) { renderMessage(error.message, true); } });
+  document.getElementById("cra-file").addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    handleCraUpload(await file.text(), file.name);
+  });
+
+  document.getElementById("match-file").addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    try {
+      const rows = await parseMatchFile(file);
+      state.matchRows = rows;
+      state.matchColumns = rows.length ? Object.keys(rows[0]) : [];
+      populateMatchColumnSelect();
+      updateMatchMetrics();
+      renderMessage(`${file.name} added for cross-file matching.`);
+    } catch (error) {
+      renderMessage(error.message, true);
+    }
+  });
+
   document.getElementById("load-sample").addEventListener("click", () => handleCraUpload(sampleText, "Sample CRA data"));
   document.getElementById("reset-app").addEventListener("click", () => window.location.reload());
-  STATUS_CODES.forEach((code) => { const button = document.createElement("button"); button.className = "status-button"; button.type = "button"; button.textContent = code; button.addEventListener("click", () => { if (state.selectedStatusCodes.has(code)) { state.selectedStatusCodes.delete(code); button.classList.remove("active"); } else { state.selectedStatusCodes.add(code); button.classList.add("active"); } state.page = 1; applyFilters(); }); document.getElementById("status-buttons").appendChild(button); });
-  ["account-id", "first-name", "last-name", "postcode", "search-column", "search-value", "regex-mode", "exact-match", "cra-match-column", "match-column"].forEach((id) => { const element = document.getElementById(id); const handler = () => { if (id === "cra-match-column" || id === "match-column") updateMatchMetrics(); else { state.page = 1; applyFilters(); } }; element.addEventListener("input", handler); element.addEventListener("change", handler); });
-  document.getElementById("rows-per-page").addEventListener("change", (event) => { state.rowsPerPage = Number(event.target.value); state.page = 1; applyFilters(); });
-  document.getElementById("page-number").addEventListener("change", (event) => { state.page = Math.max(1, Number(event.target.value || "1")); renderTable(); renderRowPreview(); });
+
+  STATUS_CODES.forEach((code) => {
+    const button = document.createElement("button");
+    button.className = "status-button";
+    button.type = "button";
+    button.textContent = code;
+    button.addEventListener("click", () => {
+      if (state.selectedStatusCodes.has(code)) {
+        state.selectedStatusCodes.delete(code);
+        button.classList.remove("active");
+      } else {
+        state.selectedStatusCodes.add(code);
+        button.classList.add("active");
+      }
+      state.page = 1;
+      applyFilters();
+    });
+    document.getElementById("status-buttons").appendChild(button);
+  });
+
+  ["account-id", "first-name", "last-name", "postcode", "search-column", "search-value", "regex-mode", "exact-match", "cra-match-column", "match-column"].forEach((id) => {
+    const element = document.getElementById(id);
+    const handler = () => {
+      if (id === "cra-match-column" || id === "match-column") updateMatchMetrics();
+      else {
+        state.page = 1;
+        applyFilters();
+      }
+    };
+    element.addEventListener("input", handler);
+    element.addEventListener("change", handler);
+  });
+
+  document.getElementById("rows-per-page").addEventListener("change", (event) => {
+    state.rowsPerPage = Number(event.target.value);
+    state.page = 1;
+    applyFilters();
+  });
+
+  document.getElementById("page-number").addEventListener("change", (event) => {
+    const totalPages = Math.max(1, Math.ceil(state.filteredRows.length / state.rowsPerPage));
+    state.page = Math.min(totalPages, Math.max(1, Number(event.target.value || "1")));
+    renderTable();
+    renderRowPreview();
+  });
+
   document.getElementById("selected-row").addEventListener("change", renderRowPreview);
   document.getElementById("download-filtered").addEventListener("click", () => downloadCsv(`cra_report_filtered_${Date.now()}.csv`, state.filteredRows));
-  document.getElementById("download-row").addEventListener("click", () => { const row = getSelectedVisibleRow(); if (row) downloadCsv(`cra_selected_row_${Date.now()}.csv`, [row]); });
+  document.getElementById("download-row").addEventListener("click", () => {
+    const row = getSelectedVisibleRow();
+    if (row) downloadCsv(`cra_selected_row_${Date.now()}.csv`, [row]);
+  });
 }
+
 bindEvents();

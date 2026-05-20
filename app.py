@@ -11,7 +11,6 @@ from typing import List, Optional, Tuple
 # Page configuration
 st.set_page_config(
     page_title="TransUnion CRA Report Analyzer",
-    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -151,25 +150,23 @@ def parse_text_content(text_content: str) -> pd.DataFrame:
     return assign_column_names(pd.DataFrame(data_rows))
 
 
-@st.cache_data
-def parse_data_file(_uploaded_file) -> Tuple[pd.DataFrame, bool]:
-    """
-    Parse the uploaded data file with intelligent delimiter detection.
-
-    Args:
-        _uploaded_file: Streamlit UploadedFile object (prefixed with _ to avoid hashing)
-
-    Returns:
-        Tuple of (DataFrame, success_flag)
-    """
+@st.cache_data(show_spinner=False)
+def parse_file_content(file_name: str, content: bytes) -> Tuple[pd.DataFrame, bool]:
+    """Parse uploaded file bytes with cache keys tied to the file content."""
     try:
-        content = _uploaded_file.read()
         text_content = content.decode("utf-8", errors="ignore")
         df = parse_text_content(text_content)
         return df, not df.empty
     except Exception as e:
         st.error(f"Error parsing file: {str(e)}")
         return pd.DataFrame(), False
+
+
+def parse_data_file(uploaded_file) -> Tuple[pd.DataFrame, bool]:
+    """Read a Streamlit upload and parse it without reusing stale cached uploads."""
+    uploaded_file.seek(0)
+    content = uploaded_file.read()
+    return parse_file_content(uploaded_file.name, content)
 
 
 def extract_status_code(df: pd.DataFrame) -> pd.DataFrame:
@@ -301,12 +298,105 @@ def normalize_match_keys(series: pd.Series) -> pd.Series:
     return normalized[normalized != ""]
 
 
+def apply_dark_theme() -> None:
+    """Apply a restrained dark theme to the Streamlit app."""
+    st.markdown(
+        """
+<style>
+  :root {
+    --cra-bg: #0b1017;
+    --cra-panel: #121a24;
+    --cra-panel-strong: #172231;
+    --cra-border: rgba(154, 172, 194, 0.18);
+    --cra-text: #eef4fb;
+    --cra-muted: #9aacc2;
+    --cra-primary: #5fb3ff;
+    --cra-primary-strong: #2f87d5;
+    --cra-success: #44c29a;
+    --cra-warning: #f4bd50;
+  }
+
+  .stApp {
+    background: linear-gradient(180deg, #0b1017 0%, #0f1722 58%, #0b1017 100%);
+    color: var(--cra-text);
+  }
+
+  [data-testid="stHeader"],
+  [data-testid="stToolbar"] {
+    background: transparent;
+  }
+
+  section[data-testid="stSidebar"] {
+    background: #0f1722;
+    border-right: 1px solid var(--cra-border);
+  }
+
+  h1, h2, h3, h4, p, label, span {
+    letter-spacing: 0;
+  }
+
+  h1 {
+    font-size: 2.35rem;
+    font-weight: 750;
+  }
+
+  [data-testid="stMetric"],
+  [data-testid="stDataFrame"],
+  div[data-testid="stAlert"],
+  div[data-testid="stExpander"] {
+    border: 1px solid var(--cra-border);
+    border-radius: 8px;
+    background: rgba(18, 26, 36, 0.82);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
+  }
+
+  [data-testid="stMetric"] {
+    padding: 1rem;
+  }
+
+  .stButton > button,
+  .stDownloadButton > button,
+  [data-testid="stFileUploader"] button {
+    border-radius: 6px;
+    border: 1px solid rgba(95, 179, 255, 0.42);
+    background: linear-gradient(180deg, #256fae 0%, #1f5f97 100%);
+    color: white;
+    font-weight: 650;
+    box-shadow: 0 10px 22px rgba(31, 95, 151, 0.24);
+  }
+
+  .stButton > button:hover,
+  .stDownloadButton > button:hover,
+  [data-testid="stFileUploader"] button:hover {
+    border-color: rgba(95, 179, 255, 0.78);
+    background: linear-gradient(180deg, #2d83c8 0%, #22679f 100%);
+  }
+
+  input,
+  textarea,
+  div[data-baseweb="select"] > div {
+    border-radius: 6px !important;
+    border-color: var(--cra-border) !important;
+    background-color: #101925 !important;
+  }
+
+  hr {
+    border-color: var(--cra-border);
+  }
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
+
 # -----------------------------
 # Main Application
 # -----------------------------
 
 def main():
-    st.title("📊 TransUnion CRA Report Analyzer")
+    apply_dark_theme()
+
+    st.title("TransUnion CRA Report Analyzer")
     st.markdown(
         """
 Upload your TransUnion CRA report file to analyze and filter the data.
@@ -315,7 +405,7 @@ Supports large files (up to 500MB) with tab or space-delimited format.
     )
 
     # File upload
-    st.sidebar.header("📁 File Upload")
+    st.sidebar.header("File Upload")
     uploaded_file = st.sidebar.file_uploader(
         "Choose a CRA report file",
         type=["txt"],
@@ -323,9 +413,9 @@ Supports large files (up to 500MB) with tab or space-delimited format.
     )
 
     if uploaded_file is None:
-        st.info("👈 Please upload a CRA report file to begin analysis")
+        st.info("Please upload a CRA report file to begin analysis.")
 
-        st.subheader("📖 Expected File Format")
+        st.subheader("Expected File Format")
         st.markdown(
             """
 The application expects a tab or space-delimited text file with the following structure:
@@ -341,19 +431,19 @@ The application expects a tab or space-delimited text file with the following st
 """
         )
 
-        st.subheader("✨ Features")
+        st.subheader("Features")
         st.markdown(
             """
-- 🔍 **Quick Status Code Filters**: One-click filtering by A, M, P, or V (stateful toggles)
-- 🔎 **Account ID Search**: Fast lookup with exact or partial matching
-- 👤 **Name Search**: Filter by first name, last name, or both
-- 📮 **Postcode Search**: Search across postcode fields
-- 🔧 **Advanced Search**: Filter any column with text search (optional regex)
-- 📥 **Export Results**: Download filtered data as CSV
-- 📊 **Large File Support**: Efficiently handles files up to 500MB
-- 📄 **Pagination + Freeze Columns**: Browse large datasets with a split-view “freeze”
-- 🧾 **Copy / Export a Single Row**: Quick extraction for CRM notes/attachments
-- 🔁 **Cross-File Matching**: Optional reconciliation against internal extract (CSV/XLSX)
+- **Quick Status Code Filters**: One-click filtering by A, M, P, or V (stateful toggles)
+- **Account ID Search**: Fast lookup with exact or partial matching
+- **Name Search**: Filter by first name, last name, or both
+- **Postcode Search**: Search across postcode fields
+- **Advanced Search**: Filter any column with text search (optional regex)
+- **Export Results**: Download filtered data as CSV
+- **Large File Support**: Efficiently handles files up to 500MB
+- **Pagination + Freeze Columns**: Browse large datasets with a split-view freeze
+- **Copy / Export a Single Row**: Quick extraction for CRM notes/attachments
+- **Cross-File Matching**: Optional reconciliation against internal extract (CSV/XLSX)
 """
         )
         return
@@ -390,7 +480,7 @@ The application expects a tab or space-delimited text file with the following st
     else:
         st.info("No tagged status codes found to chart.")
 
-    st.success(f"✅ Successfully loaded {len(df):,} records")
+    st.success(f"Successfully loaded {len(df):,} records")
 
     # -----------------------------
     # Cross-File Matching (Optional)
@@ -452,7 +542,7 @@ The application expects a tab or space-delimited text file with the following st
             st.caption("CRA records not found in internal extract (preview 200):")
             st.dataframe(cra_unmatched_df.head(200), use_container_width=True, height=300)
             st.download_button(
-                "📥 Download CRA-Unmatched (CSV)",
+                "Download CRA-Unmatched (CSV)",
                 data=cra_unmatched_df.to_csv(index=False).encode("utf-8"),
                 file_name=f"cra_unmatched_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv",
@@ -463,7 +553,7 @@ The application expects a tab or space-delimited text file with the following st
             st.caption("Internal records not found in CRA file (preview 200):")
             st.dataframe(internal_unmatched_df.head(200), use_container_width=True, height=300)
             st.download_button(
-                "📥 Download Internal-Unmatched (CSV)",
+                "Download Internal-Unmatched (CSV)",
                 data=internal_unmatched_df.to_csv(index=False).encode("utf-8"),
                 file_name=f"internal_unmatched_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv",
@@ -473,7 +563,7 @@ The application expects a tab or space-delimited text file with the following st
     # -----------------------------
     # Sidebar Filters
     # -----------------------------
-    st.sidebar.header("🔍 Filters")
+    st.sidebar.header("Filters")
     filters = {}
 
     # Session state init
@@ -561,7 +651,7 @@ The application expects a tab or space-delimited text file with the following st
         filters["regex_mode"] = regex_mode
 
     # Reset filters
-    if st.sidebar.button("🔄 Reset All Filters", use_container_width=True):
+    if st.sidebar.button("Reset All Filters", use_container_width=True):
         st.session_state.status_codes_selected = []
         st.rerun()
 
@@ -571,7 +661,7 @@ The application expects a tab or space-delimited text file with the following st
     # -----------------------------
     # Results
     # -----------------------------
-    st.header("📋 Results")
+    st.header("Results")
 
     r1, r2, r3 = st.columns(3)
     with r1:
@@ -585,7 +675,7 @@ The application expects a tab or space-delimited text file with the following st
     if len(filtered_df) > 0:
         csv_data = convert_df_to_csv(filtered_df)
         st.download_button(
-            label="📥 Download Filtered Results (CSV)",
+            label="Download Filtered Results (CSV)",
             data=csv_data,
             file_name=f"cra_report_filtered_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
@@ -660,13 +750,13 @@ The application expects a tab or space-delimited text file with the following st
 
         selected_row = page_df.iloc[int(pick) - 1]
 
-        st.caption("Selected row (JSON-style) — copy/paste into notes or CRM:")
+        st.caption("Selected row (JSON-style) - copy/paste into notes or CRM:")
         st.code(selected_row.to_json(), language="json")
 
-        st.caption("Selected row (CSV) — download for attachments:")
+        st.caption("Selected row (CSV) - download for attachments:")
         one_row_csv = selected_row.to_frame().T.to_csv(index=False).encode("utf-8")
         st.download_button(
-            "📥 Download Selected Row (CSV)",
+            "Download Selected Row (CSV)",
             data=one_row_csv,
             file_name=f"cra_selected_row_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
