@@ -18,5 +18,6 @@ if "%STREAMLIT_EXE%"=="" (
     exit /b 1
 )
 
-start "" http://localhost:8501
+start "" http://localhost:8615
 "%STREAMLIT_EXE%" run app.py
+
